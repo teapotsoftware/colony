@@ -174,6 +174,9 @@ const JOB_SMITH = 4;
 const JOB_SENTRY = 5;
 const JOB_TRADE = 6;
 
+// TODO: bruh
+const INVENTORY_SIZE_BY_JOB = [3, 7, 3, 3, 7];
+
 const GUY_SPEED = 0.04;
 
 // this array gets emptied at the start of global draw().
@@ -406,7 +409,7 @@ class Colonist {
 				}
 			}
 		}
-		if (this.numInventory > 6) {
+		if (this.numInventory >= INVENTORY_SIZE_BY_JOB[this.type]) {
 			return true;
 		}
 		return false;
@@ -451,11 +454,13 @@ class Colonist {
 					this.work++;
 					if (this.work > 20) {
 						this.work = 0;
-						let prod = ITEMS[this.targetItem].production[this.targetProduction];
-						if (prod.recipe) {
-							console.log(prod.recipe);
-							for (let ing of prod.recipe) {
-								this.inventory[ing.item] -= ing.amt;
+						// TODO: find why this is sometimes still -1 at this point
+						if (this.targetProduction >= 0) {
+							let prod = ITEMS[this.targetItem].production[this.targetProduction];
+							if (prod.recipe) {
+								for (let ing of prod.recipe) {
+									this.inventory[ing.item] -= ing.amt;
+								}
 							}
 						}
 						this.inventory[this.targetItem]++;
@@ -1459,7 +1464,7 @@ function init() {
 		}, 16)
 	})();
 
-	for (let i = 0; i < 20; i++) {
+	for (let i = 0; i < 30; i++) {
 		new Colonist(randomRange(0, 4));
 	}
 }
