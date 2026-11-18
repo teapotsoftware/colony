@@ -395,7 +395,7 @@ class Colonist {
 	}
 
 	shouldReturnToStockpile() {
-		if (this.targetItem < 0) {
+		if (this.targetItem < 0 || this.targetProduction < 0) {
 			return false;
 		}
 		let prod = ITEMS[this.targetItem].production[this.targetProduction];
