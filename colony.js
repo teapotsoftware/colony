@@ -1050,7 +1050,8 @@ function draw() {
 		shadowText(MENUS[hoveredButton].title, 400, 500)
 	}
 
-	//ctx.drawImage(sprites[document.fullscreenElement ? "ui_fullscreen1" : "ui_fullscreen0"], 800-64, 0, 64, 64)
+	ctx.drawImage(sprites[document.fullscreenElement ? "ui_fullscreen1" : "ui_fullscreen0"], 800 - 64, 0, 64, 64)
+	
 }
 
 // FIND BY NAME
@@ -1131,21 +1132,48 @@ function addRecipe(tile, item, recipe, tools) {
 	ITEMS[item[0]].production.push(prodObj);
 }
 
+var mouseOffsetX = 0;
+var mouseOffsetY = 0;
+
+function parseMouse(event) {
+	const rect = cvs.getBoundingClientRect();
+	let realW = cvs.offsetWidth;
+	let realH = cvs.offsetHeight;
+	let scrLeft = rect.left;
+	let scrTop = rect.top;
+
+	// maintain canvas aspect ratio
+	if (realW / realH > ScrW / ScrH) {
+		let newRealW = realH * (ScrW / ScrH);
+		scrLeft += (realW - newRealW) / 2;
+		realW = newRealW;
+	} else if (realW / realH < ScrW / ScrH) {
+		let newRealH = realW * (ScrH / ScrW);
+		scrTop += (realH - newRealH) / 2;
+		realH = newRealH;
+	}
+
+	let scaleX = (ScrW / realW);
+	let scaleY = (ScrH / realH);
+	mouseX = (event.clientX - scrLeft) * scaleX;
+	mouseY = (event.clientY - scrTop) * scaleY;
+	mouseOffsetX = event.offsetX * scaleX;
+	mouseOffsetY = event.offsetY * scaleY;
+}
+
 function init() {
 	cvs = document.getElementById("gameCanvas");
 	cvs.addEventListener("mousemove", event => {
-		const rect = cvs.getBoundingClientRect();
-		mouseX = event.clientX - rect.left;
-		mouseY = event.clientY - rect.top;
+		parseMouse(event);
 		if (openMenu < 0 && event.buttons & 2) {
 			if (dragMap) {
-				shiftX += (event.offsetX - dragStartX)
-				shiftY += (event.offsetY - dragStartY)
+				shiftX += (mouseOffsetX - dragStartX)
+				shiftY += (mouseOffsetY - dragStartY)
 			} else {
 				dragMap = true
 			}
-			dragStartX = event.offsetX
-			dragStartY = event.offsetY
+			dragStartX = mouseOffsetX
+			dragStartY = mouseOffsetY
 		} else {
 			dragMap = false
 			if (mouseX > 250 && mouseX < 550 && mouseY > 500) {
@@ -1182,15 +1210,13 @@ function init() {
 			}
 
 			placingBuildable = -1;
-		}
-
-		/* else if (mouseY <= 64 && mouseX >= 800 - 64) {
+		} else if (mouseY <= 64 && mouseX >= 800 - 64) {
 			if (document.fullscreenElement) {
 				document.exitFullscreen();
 			} else {
 				cvs.requestFullscreen();
 			}
-		}*/
+		}
 	})
 	cvs.addEventListener("contextmenu", event => {
 		event.preventDefault();
@@ -1207,9 +1233,7 @@ function init() {
 			}
 			*/
 		} else {
-			const rect = cvs.getBoundingClientRect();
-			mouseX = event.clientX - rect.left;
-			mouseY = event.clientY - rect.top;
+			parseMouse(event)
 			let oldScale = scl
 			if (event.deltaY < 0 && scl < 4) {
 				scl *= 2
@@ -1235,6 +1259,13 @@ function init() {
 		} else if (event.key == "Tab") {
 			event.preventDefault();
 			closeCurrentMenu();
+		} else if (event.key.toLowerCase() == "f") {
+			event.preventDefault();
+			if (document.fullscreenElement) {
+				document.exitFullscreen();
+			} else {
+				cvs.requestFullscreen();
+			}
 		}
 	})
 	ctx = cvs.getContext("2d");
