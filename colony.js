@@ -522,9 +522,9 @@ class Colonist {
 									this.numInventory -= ing.amt;
 								}
 							}
+							this.inventory[this.targetItem] += prod.amt;
+							this.numInventory += prod.amt;
 						}
-						this.inventory[this.targetItem]++;
-						this.numInventory++;
 						this.nextThink = curTime() + 0.3;
 					} else {
 						this.nextThink = curTime() + 0.13;
