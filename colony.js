@@ -141,6 +141,23 @@ function tileRender(pass = 0) {
 								//}
 								ctx.drawImage(sprites[ITEMS[guy.targetItem].sprite], drawPos.x - 8 * scl, drawPos.y - (yOffset + 20) * scl, 16 * scl, 16 * scl);
 							}
+							// DEBUG INVENTORY VIEW
+							/*
+							let inv = [];
+							for (let [k, v] of Object.entries(guy.inventory)) {
+								if (v > 0) {
+									for (let i = 0; i < v; i++) {
+										inv.push(k)
+									}
+								}
+							}
+							if (guy.shouldReturnToStockpile()) {
+								inv.push(15); // debug add Gold if theyre going to stockpile
+							}
+							for (let i in inv) {
+								ctx.drawImage(sprites[ITEMS[inv[i]].sprite], drawPos.x + (16 * i - 8) * scl, drawPos.y - (yOffset + 32) * scl, 16 * scl, 16 * scl);
+							}
+							*/
 							if (guy.work) {
 								ctx.drawImage(sprites["colonist_workbar" + guy.work], drawPos.x - 15 * scl, drawPos.y - (yOffset + 4) * scl, 30 * scl, 6 * scl);
 							}
@@ -193,6 +210,19 @@ function getTotalReservedStockpile(itemId) {
 	return n;
 }
 
+function getStockpileMinusReserved(itemId) {
+	return stockpile[itemId] - getTotalReservedStockpile(itemId);
+}
+
+
+function getStockpileIncludingHeld(itemId) {
+	let held = 0;
+	for (let col of colonists) {
+		held += col.inventory[itemId];
+	}
+	return stockpile[itemId] + held;
+}
+
 class Colonist {
 	type;
 	x;
@@ -242,7 +272,7 @@ class Colonist {
 	getJobProductsSorted() {
 		let quotaRatios = this.getJobProducts().map((itemId) => ({
 			item: itemId,
-			ratio: stockpileQuota[itemId] < 1 ? 999 : stockpile[itemId] / stockpileQuota[itemId]
+			ratio: stockpileQuota[itemId] < 1 ? 999 : getStockpileIncludingHeld(itemId) / stockpileQuota[itemId]
 		}));
 		quotaRatios.sort((a, b) => a.ratio - b.ratio);
 		return quotaRatios.map((x) => x.item);
@@ -270,7 +300,7 @@ class Colonist {
 			if (production.recipe) {
 				let hasIngredients = true;
 				for (let ing of production.recipe) {
-					if ((stockpile[ing.item] - getTotalReservedStockpile(ing.item)) < ing.amt) {
+					if (stockpile[ing.item] + this.inventory[ing.item] < ing.amt) {
 						hasIngredients = false;
 						break;
 					}
@@ -284,7 +314,7 @@ class Colonist {
 			if (production.tools) {
 				let hasTool = false;
 				for (let tool of production.tools) {
-					if (stockpile[tool] > 0) {
+					if (getStockpileMinusReserved(tool) > 0) {
 						hasTool = true;
 						break;
 					}
@@ -399,7 +429,7 @@ class Colonist {
 
 	shouldReturnToStockpile() {
 		if (this.targetItem < 0 || this.targetProduction < 0) {
-			return false;
+			return true;
 		}
 		let prod = ITEMS[this.targetItem].production[this.targetProduction];
 		if (prod.recipe) {
@@ -416,8 +446,17 @@ class Colonist {
 	}
 
 	think() {
+		if (this.targetItem < 0 || this.findProductionMethod(this.targetItem) < 0) {
+			this.targetItem = this.getBestMakeableItem();
+
+			if (this.targetItem < 0 || this.findProductionMethod(this.targetItem) < 0) {
+				// TODO: wander AI when no work to do
+				this.nextThink = curTime() + randomRange(9, 16) * 0.05;
+				return
+			}
+		}
+	
 		// findProductionMethod also sets targetTileType
-		this.targetItem = this.getBestMakeableItem();
 		this.targetProduction = this.targetItem >= 0 ? this.findProductionMethod(this.targetItem) : -1;
 
 		// determine if we should return to the stockpile
@@ -438,13 +477,22 @@ class Colonist {
 					stockpile[i] += this.inventory[i];
 					this.numInventory -= this.inventory[i];
 					this.inventory[i] = 0;
+				}
 
-					// pick up what we need
+				// find a new thing to make
+				if (this.numInventory < 1) {
+					this.targetItem = -1;
+				}
+
+				for (let i in ITEMS) {
+					// pick up what we need for our new thing
 					this.inventory[i] += this.reservedStockpile[i];
 					this.numInventory += this.reservedStockpile[i];
 					stockpile[i] -= this.reservedStockpile[i];
 					this.reservedStockpile[i] = 0;
 				}
+
+				this.nextThink = curTime() + randomRange(8, 10) * 0.05;
 			}
 		} else { // if we don't need to deposit/withdraw items/tools from stockpile then its work time
 			if (this.targetItem >= 0) {
@@ -460,6 +508,7 @@ class Colonist {
 							if (prod.recipe) {
 								for (let ing of prod.recipe) {
 									this.inventory[ing.item] -= ing.amt;
+									this.numInventory -= ing.amt;
 								}
 							}
 						}
@@ -686,7 +735,7 @@ var MENUS = [{
 					for (let i = 0; i < build.placementCost.length; i++) {
 						let x = 365 + 64 * (i % 8);
 						let y = 370 + 64 * Math.floor(i / 8);
-						let itemId = build.placementCost[i][0]
+						let itemId = build.placementCost[i].item
 						ctx.drawImage(sprites[ITEMS[itemId].sprite], x, y, 64, 64)
 						ctx.font = "16px PixelPurl"; 
 						ctx.textAlign = "center";
@@ -703,7 +752,7 @@ var MENUS = [{
 						ctx.textAlign = "right";
 						ctx.textBaseline = "bottom";
 						ctx.font = "24px PixelPurl";
-						shadowText(stockpile[itemId] + "/" + build.placementCost[i][1], x + 60, y + 60, (stockpile[itemId] < build.placementCost[i][1]) ? "#db422e" : "#FFDBAD")
+						shadowText(stockpile[itemId] + "/" + build.placementCost[i].amt, x + 60, y + 60, (stockpile[itemId] < build.placementCost[i].amt) ? "#db422e" : "#FFDBAD")
 					}
 					hovering = true;
 				}
@@ -729,10 +778,19 @@ var MENUS = [{
 		title: "Colonists",
 		draw: function() {
 			for (let i = 0; i < 5; i++) {
-			ctx.drawImage(sprites["colonist" + i], 156 + 92 * i, 150, 120, 120)
+				ctx.drawImage(sprites["colonist" + i], 156 + 92 * i, 150, 120, 120)
 			}
 		},
 		click: function(event) {
+			if (mouseY >= 150 && mouseY <= 270) {
+				for (let i = 0; i < 5; i++) {
+					let x = 156 + 92 * i + 20
+					if (mouseX >= x && mouseX <= x + 80) {
+						new Colonist(i);
+						break;
+					}
+				}
+			}
 		}
 	}, {
 		title: "Unused"
@@ -1210,9 +1268,9 @@ function init() {
 	TILES.push({name: "Iron Ore", sprite: loadSprite("tile_ore_iron"), genWeight: 2, obstructsBehind: true})
 	TILES.push({name: "Gold Ore", sprite: loadSprite("tile_ore_gold"), genWeight: 1, obstructsBehind: true})
 
-	ITEMS.push({name: "Stick", sprite: loadSprite("item_stick"), startQuota: 10})
-	ITEMS.push({name: "Stone", sprite: loadSprite("item_stone"), startQuota: 10})
-	ITEMS.push({name: "Berries", sprite: loadSprite("item_berries"), startQuota: 10})
+	ITEMS.push({name: "Stick", sprite: loadSprite("item_stick"), startWith: 20, startQuota: 10})
+	ITEMS.push({name: "Stone", sprite: loadSprite("item_stone"), startWith: 20, startQuota: 10})
+	ITEMS.push({name: "Berries", sprite: loadSprite("item_berries"), startWith: 20, startQuota: 10})
 	ITEMS.push({name: "Clay", sprite: loadSprite("item_clay")})
 	ITEMS.push({name: "Copper Ore", sprite: loadSprite("item_copper_ore")})
 	ITEMS.push({name: "Tin Ore", sprite: loadSprite("item_tin_ore")})
@@ -1262,70 +1320,70 @@ function init() {
 		desc: ["Houses up to 3 colonists."],
 		sprite: loadSprite("tile_house2"),
 		validTiles: [FBN(TILES, "Grass"), FBN(TILES, "Sand")],
-		placementCost: [[FBN(ITEMS, "Stick"), 20]]
+	placementCost: [{item: FBN(ITEMS, "Stick"), amt: 20}]
 	});
 	BUILDABLES.push({
 		name: "Brick House",
 		desc: ["She's mighty mighty, housing", "up to 8 colonists."],
 		sprite: loadSprite("tile_house1"),
 		validTiles: [FBN(TILES, "Grass"), FBN(TILES, "Sand")],
-		placementCost: [[FBN(ITEMS, "Brick"), 30]]
+		placementCost: [{item: FBN(ITEMS, "Brick"), amt: 30}]
 	});
 	BUILDABLES.push({
 		name: "Stone Oven",
 		desc: ["This simple oven can", "smelt clay & copper."],
 		sprite: loadSprite("tile_oven_stone"),
 		validTiles: [FBN(TILES, "Grass"), FBN(TILES, "Sand")],
-		placementCost: [[FBN(ITEMS, "Stone"), 10]]
+		placementCost: [{item: FBN(ITEMS, "Stone"), amt: 10}]
 	});
 	BUILDABLES.push({
 		name: "Brick Oven",
 		desc: ["This sturdy oven gets hot", "enough to smelt bronze."],
 		sprite: loadSprite("tile_oven_brick"),
 		validTiles: [FBN(TILES, "Grass"), FBN(TILES, "Sand")],
-		placementCost: [[FBN(ITEMS, "Brick"), 20]]
+		placementCost: [{item: FBN(ITEMS, "Brick"), amt: 20}]
 	});
 	BUILDABLES.push({
 		name: "Bronze Oven",
 		desc: ["This beauty can smelt so", "much iron & gold in it."],
 		sprite: loadSprite("tile_oven_bronze"),
 		validTiles: [FBN(TILES, "Grass"), FBN(TILES, "Sand")],
-		placementCost: [[FBN(ITEMS, "Bronze"), 20]]
+		placementCost: [{item: FBN(ITEMS, "Bronze"), amt: 20}]
 	});
 	BUILDABLES.push({
 		name: "Workbench",
 		desc: ["The essential bench for", "crafty colonists."],
 		sprite: loadSprite("tile_workbench"),
 		validTiles: [FBN(TILES, "Grass"), FBN(TILES, "Sand")],
-		placementCost: [[FBN(ITEMS, "Stick"), 8]]
+		placementCost: [{item: FBN(ITEMS, "Stick"), amt: 8}]
 	});
 	BUILDABLES.push({
 		name: "Chest",
 		desc: ["Allows colonists access to the stockpile", "without returning to the flag."],
 		sprite: loadSprite("tile_chest"),
 		validTiles: [FBN(TILES, "Grass"), FBN(TILES, "Sand")],
-		placementCost: [[FBN(ITEMS, "Wood"), 8]]
+		placementCost: [{item: FBN(ITEMS, "Wood"), amt: 8}]
 	});
 	BUILDABLES.push({
 		name: "Stone Anvil",
 		desc: ["Upon this rock, smiths", "fashion tools of copper."],
 		sprite: loadSprite("tile_anvil_stone"),
 		validTiles: [FBN(TILES, "Grass"), FBN(TILES, "Sand")],
-		placementCost: [[FBN(ITEMS, "Stone"), 20]]
+		placementCost: [{item: FBN(ITEMS, "Stone"), amt: 20}]
 	});
 	BUILDABLES.push({
 		name: "Bronze Anvil",
 		desc: ["To make bronze tools, you're", "going to need a bronze anvil."],
 		sprite: loadSprite("tile_anvil_bronze"),
 		validTiles: [FBN(TILES, "Grass"), FBN(TILES, "Sand")],
-		placementCost: [[FBN(ITEMS, "Bronze"), 20]]
+		placementCost: [{item: FBN(ITEMS, "Bronze"), amt: 20}]
 	});
 	BUILDABLES.push({
 		name: "Iron Anvil",
 		desc: ["It slices, it dices, it makes iron", "tools, it even makes coins!"],
 		sprite: loadSprite("tile_anvil_iron"),
 		validTiles: [FBN(TILES, "Grass"), FBN(TILES, "Sand")],
-		placementCost: [[FBN(ITEMS, "Iron"), 20]]
+		placementCost: [{item: FBN(ITEMS, "Iron"), amt: 20}]
 	});
 
 	// buildables are ultimately just tiles
@@ -1464,7 +1522,8 @@ function init() {
 		}, 16)
 	})();
 
-	for (let i = 0; i < 30; i++) {
-		new Colonist(randomRange(0, 4));
-	}
+	//for (let i = 0; i < 30; i++) {
+		//new Colonist(randomRange(0, 4));
+	//}
+	//new Colonist(1);
 }
