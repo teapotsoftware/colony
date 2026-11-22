@@ -270,10 +270,21 @@ class Colonist {
 	// returns all items this job could possibly make
 	// sorted high priority to low based on quotas
 	getJobProductsSorted() {
+		let quotaRatios = [];
+		for (let itemId of this.getJobProducts()) {
+			if (stockpile[itemId] < stockpileQuota[itemId]) {
+				quotaRatios.push({
+					item: itemId,
+					ratio: (stockpile[itemId] + this.inventory[itemId]) / stockpileQuota[itemId]
+				})
+			}
+		}
+		/*
 		let quotaRatios = this.getJobProducts().map((itemId) => ({
 			item: itemId,
 			ratio: stockpileQuota[itemId] < 1 ? 999 : getStockpileIncludingHeld(itemId) / stockpileQuota[itemId]
 		}));
+		*/
 		quotaRatios.sort((a, b) => a.ratio - b.ratio);
 		return quotaRatios.map((x) => x.item);
 	}
